@@ -17,10 +17,10 @@ Set it in the test files by replacing `API-KEY`.
 
 ## Usage
 
-Import from the barrel `index.ts`:
+Import from the barrel `src/index.ts`:
 
 ```ts
-import { LinkupClient, LinkupResearchQueue } from "./index";
+import { LinkupClient, LinkupResearchQueue } from "./src/index";
 ```
 
 ## Output types
@@ -56,7 +56,7 @@ Additional fields are passed through as-is.
 ### 1) Start → check → poll (client)
 
 ```ts
-import { LinkupClient } from "./index";
+import { LinkupClient } from "./src/index";
 
 const API_KEY = "API-KEY";
 const client = new LinkupClient({ apiKey: API_KEY });
@@ -81,7 +81,7 @@ console.dir(final, { depth: null });
 ### 2) Queue batch + add (list of requests)
 
 ```ts
-import { LinkupClient, LinkupResearchQueue, type ResearchParams } from "./index";
+import { LinkupClient, LinkupResearchQueue, type ResearchParams } from "./src/index";
 
 const API_KEY = "API-KEY";
 const client = new LinkupClient({ apiKey: API_KEY });
@@ -186,15 +186,17 @@ const queue = new LinkupResearchQueue(client, {
 linkup_research_sdk_v2/
   package.json
   .gitignore
-  LinkupClient.ts
-  LinkupResearchQueue.ts
-  queue/
-    types.ts
-    deferred.ts
-    state.ts
-    snapshots.ts
-    targets.ts
-    checks.ts
+  src/
+    LinkupClient.ts
+    LinkupResearchQueue.ts
+    index.ts
+    queue/
+      types.ts
+      deferred.ts
+      state.ts
+      snapshots.ts
+      targets.ts
+      checks.ts
   tests/
     client.test.ts
     queue.test.ts

@@ -1,4 +1,4 @@
-import { LinkupClient, LinkupResearchQueue, type ResearchParams } from "../index";
+import { LinkupClient, LinkupResearchQueue, type ResearchParams } from "../src/index";
 
 /**
  * Live API test for LinkupResearchQueue.

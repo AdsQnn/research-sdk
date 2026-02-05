@@ -1,4 +1,4 @@
-import { LinkupClient } from "../index";
+import { LinkupClient } from "../src/index";
 
 /**
  * Live API test for LinkupClient.

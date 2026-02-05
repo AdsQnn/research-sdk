@@ -2,7 +2,7 @@
   "name": "linkup-research-sdk",
   "version": "1.0.0",
   "description": "Minimal TypeScript client + queue wrapper for Linkup Research API",
-  "main": "index.ts",
+  "main": "src/index.ts",
   "author": "Your Name",
   "license": "MIT",
   "scripts": {
