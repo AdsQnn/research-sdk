@@ -82,6 +82,7 @@ type ResearchParamsBase = {
   includeSources?: boolean;
   includeDomains?: string[];
   excludeDomains?: string[];
+  renderJs?: boolean;
   fromDate?: Date | string;
   toDate?: Date | string;
   maxResults?: number;
