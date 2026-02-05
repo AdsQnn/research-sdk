@@ -235,6 +235,7 @@ linkup_research_sdk_v2/
     LinkupClient.ts
     LinkupResearchQueue.ts
     index.ts
+    linkupTypes.ts
     queue/
       types.ts
       engine.ts
