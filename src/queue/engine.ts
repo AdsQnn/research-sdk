@@ -1,31 +1,32 @@
 import type { LinkupClient } from "../LinkupClient";
+import type { ResearchOutputFor, ResearchParams } from "../linkupTypes";
 import type { QueueEvent, QueueOptions } from "./types";
 import { QueueState, type QueueTask } from "./state";
 
-type Command =
+type Command<TParams extends ResearchParams<any>> =
   | {
-      tasks: QueueTask[];
+      tasks: QueueTask<TParams>[];
     }
   | {
       stop: true;
     };
 
-type Emit = (event: QueueEvent) => void;
+type Emit<TParams extends ResearchParams<any>> = (event: QueueEvent<TParams>) => void;
 
-type EngineDeps = {
+type EngineDeps<TParams extends ResearchParams<any>> = {
   client: LinkupClient;
-  options: QueueOptions;
-  state: QueueState;
-  emit: Emit;
+  options: QueueOptions<TParams>;
+  state: QueueState<TParams>;
+  emit: Emit<TParams>;
 };
 
-export class QueueEngine {
+export class QueueEngine<TParams extends ResearchParams<any> = ResearchParams> {
   private readonly client: LinkupClient;
-  private readonly options: QueueOptions;
-  private readonly state: QueueState;
-  private readonly emitEvent: Emit;
-  private readonly controller: AsyncGenerator<undefined, void, Command | undefined>;
-  private readonly commandQueue: Command[] = [];
+  private readonly options: QueueOptions<TParams>;
+  private readonly state: QueueState<TParams>;
+  private readonly emitEvent: Emit<TParams>;
+  private readonly controller: AsyncGenerator<undefined, void, Command<TParams> | undefined>;
+  private readonly commandQueue: Command<TParams>[] = [];
   private readonly abortControllers = new Map<number, AbortController>();
   private readonly cancelled = new Set<number>();
   private running = true;
@@ -36,7 +37,7 @@ export class QueueEngine {
   private drainingQueue = false;
   private controllerPrimed = false;
 
-  constructor(deps: EngineDeps) {
+  constructor(deps: EngineDeps<TParams>) {
     this.client = deps.client;
     this.options = deps.options;
     this.state = deps.state;
@@ -49,7 +50,7 @@ export class QueueEngine {
     return this.stopping || !this.running;
   }
 
-  enqueue(tasks: QueueTask[]) {
+  enqueue(tasks: QueueTask<TParams>[]) {
     if (this.isStopped) {
       throw new Error("Queue is stopped.");
     }
@@ -136,11 +137,11 @@ export class QueueEngine {
     return false;
   }
 
-  private emit(event: QueueEvent) {
+  private emit(event: QueueEvent<TParams>) {
     this.emitEvent(event);
   }
 
-  private enqueueCommand(command: Command) {
+  private enqueueCommand(command: Command<TParams>) {
     this.commandQueue.push(command);
     void this.drainCommands();
   }
@@ -175,7 +176,7 @@ export class QueueEngine {
 
   private async *controlLoop() {
     while (this.running) {
-      const command: Command | undefined = yield;
+      const command: Command<TParams> | undefined = yield;
       if (!command) {
         continue;
       }
@@ -219,7 +220,7 @@ export class QueueEngine {
     }
   }
 
-  private async startTask(task: QueueTask) {
+  private async startTask(task: QueueTask<TParams>) {
     if (this.stopping) {
       this.cleanup(task.requestId);
       this.runningCount -= 1;
@@ -263,13 +264,13 @@ export class QueueEngine {
     }
   }
 
-  private async pollTask(task: QueueTask, taskId: string) {
+  private async pollTask(task: QueueTask<TParams>, taskId: string) {
     try {
       if (this.isCancelled(task.requestId)) {
         return;
       }
       const controller = this.getController(task.requestId);
-      const result = await this.client.poll(taskId, {
+      const result = await this.client.poll<ResearchOutputFor<TParams>>(taskId, {
         pollIntervalMs: this.options.pollIntervalMs,
         timeoutMs: this.options.timeoutMs,
         retry: this.options.retry,
@@ -335,7 +336,7 @@ export class QueueEngine {
     return this.cancelled.has(requestId);
   }
 
-  private rejectTask(task: QueueTask, taskId?: string) {
+  private rejectTask(task: QueueTask<TParams>, taskId?: string) {
     const err = this.stopError ?? new Error("Queue stopped");
     this.emit({ type: "error", requestId: task.requestId, taskId, error: err });
     task.rejectId(err);

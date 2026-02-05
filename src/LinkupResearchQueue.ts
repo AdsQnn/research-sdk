@@ -1,4 +1,4 @@
-import type { LinkupResearchResponse, ResearchParams } from "./LinkupClient";
+import type { LinkupResearchResponse, ResearchOutputFor, ResearchParams } from "./linkupTypes";
 import { LinkupClient } from "./LinkupClient";
 import type {
   ActiveEntry,
@@ -16,7 +16,7 @@ import { collectTargets, collectTargetsByTaskId } from "./queue/targets";
 import { runCheckAll } from "./queue/checks";
 import { QueueEngine } from "./queue/engine";
 
-type Listener = (event: QueueEvent) => void;
+type Listener<TParams extends ResearchParams<any>> = (event: QueueEvent<TParams>) => void;
 
 const DEFAULT_SNAPSHOT_TTL_MS = 60 * 60 * 1000;
 const DEFAULT_SNAPSHOT_MAX_ENTRIES = 1000;
@@ -24,27 +24,28 @@ const DEFAULT_SNAPSHOT_MAX_ENTRIES = 1000;
 /**
  * Queue wrapper for Linkup /research. Handles batching, polling, and status events.
  */
-export class LinkupResearchQueue {
+export class LinkupResearchQueue<TParams extends ResearchParams<any> = ResearchParams> {
   private readonly client: LinkupClient;
-  private readonly options: QueueOptions;
-  private readonly state = new QueueState();
-  private readonly snapshots: SnapshotStore;
-  private readonly listeners = new Set<Listener>();
-  private readonly engine: QueueEngine;
+  private readonly options: QueueOptions<TParams>;
+  private readonly state: QueueState<TParams>;
+  private readonly snapshots: SnapshotStore<TParams>;
+  private readonly listeners = new Set<Listener<TParams>>();
+  private readonly engine: QueueEngine<TParams>;
   private requestCounter = 0;
 
-  constructor(client: LinkupClient, options: QueueOptions = {}) {
+  constructor(client: LinkupClient, options: QueueOptions<TParams> = {}) {
     this.client = client;
     this.options = options;
+    this.state = new QueueState<TParams>();
     const snapshotTtlMs =
       options.snapshotTtlMs === null ? undefined : options.snapshotTtlMs ?? DEFAULT_SNAPSHOT_TTL_MS;
     const snapshotMaxEntries =
       options.snapshotMaxEntries === null ? undefined : options.snapshotMaxEntries ?? DEFAULT_SNAPSHOT_MAX_ENTRIES;
-    this.snapshots = new SnapshotStore({
+    this.snapshots = new SnapshotStore<TParams>({
       ttlMs: snapshotTtlMs,
       maxEntries: snapshotMaxEntries,
     });
-    this.engine = new QueueEngine({
+    this.engine = new QueueEngine<TParams>({
       client: this.client,
       options: this.options,
       state: this.state,
@@ -55,15 +56,15 @@ export class LinkupResearchQueue {
   /**
    * Enqueue a single research request.
    */
-  add(params: ResearchParams): QueueHandle {
+  add(params: TParams): QueueHandle<TParams> {
     if (this.engine.isStopped) {
       throw new Error("Queue is stopped.");
     }
     const requestId = (this.requestCounter += 1);
     const idDeferred = createDeferred<string>();
-    const doneDeferred = createDeferred<LinkupResearchResponse>();
+    const doneDeferred = createDeferred<LinkupResearchResponse<ResearchOutputFor<TParams>>>();
 
-    const task: QueueTask = {
+    const task: QueueTask<TParams> = {
       requestId,
       params,
       resolveId: idDeferred.resolve,
@@ -79,17 +80,17 @@ export class LinkupResearchQueue {
   /**
    * Enqueue multiple requests at once.
    */
-  batch(paramsList: ResearchParams[]): QueueHandle[] {
+  batch(paramsList: TParams[]): QueueHandle<TParams>[] {
     if (this.engine.isStopped) {
       throw new Error("Queue is stopped.");
     }
-    const handles: QueueHandle[] = [];
-    const tasks: QueueTask[] = [];
+    const handles: QueueHandle<TParams>[] = [];
+    const tasks: QueueTask<TParams>[] = [];
 
     for (const params of paramsList) {
       const requestId = (this.requestCounter += 1);
       const idDeferred = createDeferred<string>();
-      const doneDeferred = createDeferred<LinkupResearchResponse>();
+      const doneDeferred = createDeferred<LinkupResearchResponse<ResearchOutputFor<TParams>>>();
 
       tasks.push({
         requestId,
@@ -113,7 +114,7 @@ export class LinkupResearchQueue {
    * Listen to queue events (enqueued/started/status/completed/error).
    * Returns a handle with unlisten().
    */
-  listen(handler: Listener): ListenerHandle {
+  listen(handler: Listener<TParams>): ListenerHandle {
     this.listeners.add(handler);
     return {
       unlisten: () => this.listeners.delete(handler),
@@ -123,40 +124,40 @@ export class LinkupResearchQueue {
   /**
    * Active tasks with taskId assigned (ready for GET /research/{id}).
    */
-  active(): ActiveEntry[] {
+  active(): ActiveEntry<TParams>[] {
     return this.state.listActive();
   }
 
   /**
    * Tasks waiting to start (no taskId yet).
    */
-  queued(): QueuedEntry[] {
+  queued(): QueuedEntry<TParams>[] {
     return this.state.listQueued();
   }
 
   /**
    * Snapshot of all known tasks (queued/active/completed/error).
    */
-  all(): CheckAllEntry[] {
+  all(): CheckAllEntry<TParams>[] {
     return this.checkAllSync();
   }
 
   /**
    * Live status check from API for a queued requestId (must be started).
    */
-  async check(requestId: number) {
+  async check(requestId: number): Promise<LinkupResearchResponse<ResearchOutputFor<TParams>>> {
     const activeTask = this.state.getActive(requestId);
     if (!activeTask?.taskId) {
       throw new Error("Task has not started yet or taskId is unavailable.");
     }
-    return await this.client.check(activeTask.taskId, { retry: this.options.retry });
+    return await this.client.check<ResearchOutputFor<TParams>>(activeTask.taskId, { retry: this.options.retry });
   }
 
   /**
    * Live status check from API for a Linkup taskId.
    */
-  async checkByTaskId(taskId: string) {
-    return await this.client.check(taskId, { retry: this.options.retry });
+  async checkByTaskId(taskId: string): Promise<LinkupResearchResponse<ResearchOutputFor<TParams>>> {
+    return await this.client.check<ResearchOutputFor<TParams>>(taskId, { retry: this.options.retry });
   }
 
   /**
@@ -178,7 +179,7 @@ export class LinkupResearchQueue {
    */
   async checkAll(requestIds?: number[]) {
     const targets = collectTargets(requestIds, this.state);
-    return await runCheckAll(
+    return await runCheckAll<TParams>(
       targets,
       this.client,
       this.snapshots,
@@ -192,7 +193,7 @@ export class LinkupResearchQueue {
    */
   checkAllSync(requestIds?: number[]) {
     const filter = requestIds ? new Set(requestIds) : undefined;
-    const results: CheckAllEntry[] = [];
+    const results: CheckAllEntry<TParams>[] = [];
 
     if (filter) {
       for (const requestId of filter) {
@@ -210,7 +211,7 @@ export class LinkupResearchQueue {
    */
   async checkAllByTaskId(taskIds?: string[]) {
     const targets = collectTargetsByTaskId(taskIds, this.state, this.snapshots);
-    return await runCheckAll(
+    return await runCheckAll<TParams>(
       targets,
       this.client,
       this.snapshots,
@@ -223,7 +224,7 @@ export class LinkupResearchQueue {
    * Snapshot list by taskId list.
    */
   checkAllByTaskIdSync(taskIds?: string[]) {
-    const results: CheckAllEntry[] = [];
+    const results: CheckAllEntry<TParams>[] = [];
     const filter = taskIds ? new Set(taskIds) : undefined;
     if (!filter) {
       return this.snapshots.getAll();
@@ -243,7 +244,7 @@ export class LinkupResearchQueue {
   /**
    * Await all handles (utility wrapper).
    */
-  async waitAll(handles: QueueHandle[]): Promise<LinkupResearchResponse[]> {
+  async waitAll(handles: QueueHandle<TParams>[]): Promise<LinkupResearchResponse<ResearchOutputFor<TParams>>[]> {
     return await Promise.all(handles.map((handle) => handle.done));
   }
 
@@ -251,8 +252,8 @@ export class LinkupResearchQueue {
    * Await all handles, capturing errors (utility wrapper).
    */
   async waitAllSettled(
-    handles: QueueHandle[],
-  ): Promise<PromiseSettledResult<LinkupResearchResponse>[]> {
+    handles: QueueHandle<TParams>[],
+  ): Promise<PromiseSettledResult<LinkupResearchResponse<ResearchOutputFor<TParams>>>[]> {
     return await Promise.allSettled(handles.map((handle) => handle.done));
   }
 
@@ -285,7 +286,7 @@ export class LinkupResearchQueue {
     this.engine.stop();
   }
 
-  private emit(event: QueueEvent) {
+  private emit(event: QueueEvent<TParams>) {
     this.snapshots.record(event);
     for (const handler of this.listeners) {
       try {

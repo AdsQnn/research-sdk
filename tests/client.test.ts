@@ -1,11 +1,11 @@
-import { LinkupClient } from "../src/index";
+import { LinkupClient, type ResearchOutputFor, type SourcedAnswerParams } from "../src/index";
 
 /**
  * Live API test for LinkupClient.
  * Run with: bun linkup_research_sdk_v2/tests/client.test.ts
  */
-const API_KEY = "API-KEY";
-if (API_KEY === "API-KEY") {
+const API_KEY = "API_KEY";
+if (API_KEY === "API_KEY") {
   throw new Error("Set API_KEY in tests/client.test.ts before running.");
 }
 
@@ -21,17 +21,21 @@ const client = new LinkupClient({
 
 const query = "Who are Linkup, the French AI startup? Answer in 2 sentences.";
 
-const { id } = await client.search({
+const params: SourcedAnswerParams = {
   query,
   outputType: "sourcedAnswer",
-});
+};
+
+const { id } = await client.search(params);
 
 console.log(`[client] taskId=${id}`);
 
-const first = await client.check(id);
+type Output = ResearchOutputFor<typeof params>;
+
+const first = await client.check<Output>(id);
 console.log(`[client] check status=${first.status ?? "unknown"}`);
 
-const result = await client.poll(id, {
+const result = await client.poll<Output>(id, {
   pollIntervalMs: 2000,
   retry: {
     maxAttempts: 3,

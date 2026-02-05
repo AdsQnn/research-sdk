@@ -1,17 +1,24 @@
 export { LinkupClient } from "./LinkupClient";
 export type {
   LinkupOutputType,
+  LinkupOutput,
+  SourcedAnswerOutput,
+  StructuredOutput,
   JsonSchema,
   JsonSchemaPrimitive,
   JsonSchemaTypeName,
   LinkupStatus,
   LinkupStartResponse,
   LinkupResearchResponse,
+  LinkupResearchResponseFor,
   RetryOptions,
   LinkupPollOptions,
   LinkupClientConfig,
+  SourcedAnswerParams,
+  StructuredResearchParams,
   ResearchParams,
-} from "./LinkupClient";
+  ResearchOutputFor,
+} from "./linkupTypes";
 
 export { LinkupResearchQueue } from "./LinkupResearchQueue";
 export type {
@@ -23,4 +30,3 @@ export type {
   QueueOptions,
   ListenerHandle,
 } from "./LinkupResearchQueue";
-

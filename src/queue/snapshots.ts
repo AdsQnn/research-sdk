@@ -1,8 +1,8 @@
-import type { LinkupStatus } from "../LinkupClient";
+import type { LinkupStatus, ResearchParams } from "../linkupTypes";
 import type { CheckAllEntry, QueueEvent } from "./types";
 
-export class SnapshotStore {
-  private readonly snapshots = new Map<number, CheckAllEntry>();
+export class SnapshotStore<TParams extends ResearchParams<any> = ResearchParams> {
+  private readonly snapshots = new Map<number, CheckAllEntry<TParams>>();
   private readonly taskIdToRequestId = new Map<string, number>();
   private readonly ttlMs?: number;
   private readonly maxEntries?: number;
@@ -12,9 +12,9 @@ export class SnapshotStore {
     this.maxEntries = options.maxEntries;
   }
 
-  record(event: QueueEvent) {
+  record(event: QueueEvent<TParams>) {
     const now = Date.now();
-    const entry: CheckAllEntry = {
+    const entry: CheckAllEntry<TParams> = {
       requestId: event.requestId,
       phase: event.type,
       updatedAt: now,
@@ -60,7 +60,7 @@ export class SnapshotStore {
     return this.taskIdToRequestId.get(taskId);
   }
 
-  update(entry: CheckAllEntry) {
+  update(entry: CheckAllEntry<TParams>) {
     const updated = {
       ...entry,
       updatedAt: entry.updatedAt ?? Date.now(),
@@ -94,7 +94,7 @@ export class SnapshotStore {
     }
   }
 
-  private removeSnapshot(requestId: number, snapshot: CheckAllEntry) {
+  private removeSnapshot(requestId: number, snapshot: CheckAllEntry<TParams>) {
     this.snapshots.delete(requestId);
     if (snapshot.taskId) {
       const mapped = this.taskIdToRequestId.get(snapshot.taskId);

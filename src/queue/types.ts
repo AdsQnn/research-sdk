@@ -1,36 +1,36 @@
 import type {
-  LinkupOutput,
   LinkupPollOptions,
   LinkupResearchResponse,
   LinkupStatus,
+  ResearchOutputFor,
   ResearchParams,
-} from "../LinkupClient";
+} from "../linkupTypes";
 
-export type QueueEvent<TOutput = LinkupOutput> =
+export type QueueEvent<TParams extends ResearchParams<any> = ResearchParams> =
   | {
       type: "enqueued";
       requestId: number;
-      params: ResearchParams;
+      params: TParams;
     }
   | {
       type: "started";
       requestId: number;
       taskId: string;
-      params: ResearchParams;
+      params: TParams;
     }
   | {
       type: "status";
       requestId: number;
       taskId: string;
       status: LinkupStatus;
-      response: LinkupResearchResponse<TOutput>;
+      response: LinkupResearchResponse<ResearchOutputFor<TParams>>;
       elapsedMs: number;
     }
   | {
       type: "completed";
       requestId: number;
       taskId: string;
-      result: LinkupResearchResponse<TOutput>;
+      result: LinkupResearchResponse<ResearchOutputFor<TParams>>;
     }
   | {
       type: "error";
@@ -39,39 +39,40 @@ export type QueueEvent<TOutput = LinkupOutput> =
       error: Error;
     };
 
-export interface QueueHandle<TOutput = LinkupOutput> {
+export interface QueueHandle<TParams extends ResearchParams<any> = ResearchParams> {
   requestId: number;
   id: Promise<string>;
-  done: Promise<LinkupResearchResponse<TOutput>>;
+  done: Promise<LinkupResearchResponse<ResearchOutputFor<TParams>>>;
 }
 
-export interface QueueOptions<TOutput = LinkupOutput> extends LinkupPollOptions<TOutput> {
+export interface QueueOptions<TParams extends ResearchParams<any> = ResearchParams>
+  extends LinkupPollOptions<ResearchOutputFor<TParams>> {
   concurrency?: number;
   snapshotTtlMs?: number | null;
   snapshotMaxEntries?: number | null;
   checkConcurrency?: number;
 }
 
-export type CheckAllEntry<TOutput = LinkupOutput> = {
+export type CheckAllEntry<TParams extends ResearchParams<any> = ResearchParams> = {
   requestId: number;
   taskId?: string;
   status?: LinkupStatus;
-  response?: LinkupResearchResponse<TOutput>;
+  response?: LinkupResearchResponse<ResearchOutputFor<TParams>>;
   error?: Error;
   notTracked?: boolean;
   phase?: "enqueued" | "started" | "status" | "completed" | "error";
   updatedAt?: number;
 };
 
-export type ActiveEntry = {
+export type ActiveEntry<TParams extends ResearchParams<any> = ResearchParams> = {
   requestId: number;
   taskId?: string;
-  params: ResearchParams;
+  params: TParams;
 };
 
-export type QueuedEntry = {
+export type QueuedEntry<TParams extends ResearchParams<any> = ResearchParams> = {
   requestId: number;
-  params: ResearchParams;
+  params: TParams;
 };
 
 export type ListenerHandle = {

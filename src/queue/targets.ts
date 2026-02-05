@@ -1,8 +1,12 @@
+import type { ResearchParams } from "../linkupTypes";
 import type { QueueState } from "./state";
 import type { SnapshotStore } from "./snapshots";
 import type { CheckTarget } from "./checks";
 
-export const collectTargets = (requestIds: number[] | undefined, state: QueueState) => {
+export const collectTargets = <TParams extends ResearchParams<any>>(
+  requestIds: number[] | undefined,
+  state: QueueState<TParams>,
+) => {
   const filter = requestIds ? new Set(requestIds) : undefined;
   const targets: CheckTarget[] = [];
 
@@ -21,10 +25,10 @@ export const collectTargets = (requestIds: number[] | undefined, state: QueueSta
   return targets;
 };
 
-export const collectTargetsByTaskId = (
+export const collectTargetsByTaskId = <TParams extends ResearchParams<any>>(
   taskIds: string[] | undefined,
-  state: QueueState,
-  snapshots: SnapshotStore,
+  state: QueueState<TParams>,
+  snapshots: SnapshotStore<TParams>,
 ) => {
   const targets: CheckTarget[] = [];
   if (!taskIds) {

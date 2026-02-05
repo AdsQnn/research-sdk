@@ -1,26 +1,26 @@
-import type { LinkupOutput, LinkupResearchResponse, ResearchParams } from "../LinkupClient";
+import type { LinkupResearchResponse, ResearchOutputFor, ResearchParams } from "../linkupTypes";
 import type { ActiveEntry, QueuedEntry } from "./types";
 
-export type QueueTask = {
+export type QueueTask<TParams extends ResearchParams<any> = ResearchParams> = {
   requestId: number;
-  params: ResearchParams;
+  params: TParams;
   resolveId: (id: string) => void;
   rejectId: (error: Error) => void;
-  resolveDone: (result: LinkupResearchResponse<LinkupOutput>) => void;
+  resolveDone: (result: LinkupResearchResponse<ResearchOutputFor<TParams>>) => void;
   rejectDone: (error: Error) => void;
 };
 
-export type ActiveTask = {
-  task: QueueTask;
+export type ActiveTask<TParams extends ResearchParams<any> = ResearchParams> = {
+  task: QueueTask<TParams>;
   taskId?: string;
 };
 
-export class QueueState {
-  private readonly tasks: QueueTask[] = [];
-  private readonly queued = new Map<number, QueueTask>();
-  private readonly active = new Map<number, ActiveTask>();
+export class QueueState<TParams extends ResearchParams<any> = ResearchParams> {
+  private readonly tasks: QueueTask<TParams>[] = [];
+  private readonly queued = new Map<number, QueueTask<TParams>>();
+  private readonly active = new Map<number, ActiveTask<TParams>>();
 
-  enqueue(task: QueueTask) {
+  enqueue(task: QueueTask<TParams>) {
     this.tasks.push(task);
     this.queued.set(task.requestId, task);
   }
@@ -53,8 +53,8 @@ export class QueueState {
     this.active.delete(requestId);
   }
 
-  listActive(): ActiveEntry[] {
-    const entries: ActiveEntry[] = [];
+  listActive(): ActiveEntry<TParams>[] {
+    const entries: ActiveEntry<TParams>[] = [];
     for (const [requestId, activeTask] of this.active.entries()) {
       if (!activeTask.taskId) {
         continue;
@@ -68,8 +68,8 @@ export class QueueState {
     return entries;
   }
 
-  listQueued(): QueuedEntry[] {
-    const entries: QueuedEntry[] = [];
+  listQueued(): QueuedEntry<TParams>[] {
+    const entries: QueuedEntry<TParams>[] = [];
     for (const [requestId, task] of this.queued.entries()) {
       entries.push({ requestId, params: task.params });
     }

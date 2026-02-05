@@ -5,9 +5,9 @@ export type Deferred<T> = {
 };
 
 export const createDeferred = <T>() => {
-  let resolve!: (value: T) => void;
+  let resolve!: (value: T | PromiseLike<T>) => void;
   let reject!: (error: Error) => void;
-  const promise = new Promise<T>((res, rej) => {
+  const promise = new Promise<T>((res: (value: T | PromiseLike<T>) => void, rej: (error: Error) => void) => {
     resolve = res;
     reject = rej;
   });
