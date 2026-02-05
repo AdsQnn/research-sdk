@@ -5,7 +5,12 @@ export type Deferred<T> = {
 };
 
 export const createDeferred = <T>() => {
-  const { promise, resolve, reject } = Promise.withResolvers<T>();
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
   let settled = false;
   promise.catch(() => {});
   return {

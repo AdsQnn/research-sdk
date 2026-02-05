@@ -23,15 +23,28 @@ export type JsonSchema = {
   [keyword: string]: unknown;
 };
 
+export type SourcedAnswerOutput = {
+  type: "sourcedAnswer";
+  [key: string]: unknown;
+};
+
+export type StructuredOutput<TStructured = unknown> = {
+  type: "structured";
+  data?: TStructured;
+  [key: string]: unknown;
+};
+
+export type LinkupOutput<TStructured = unknown> = SourcedAnswerOutput | StructuredOutput<TStructured>;
+
 export type LinkupStatus = "pending" | "processing" | "completed" | "error" | "unknown";
 
 export interface LinkupStartResponse {
   id: string;
 }
 
-export interface LinkupResearchResponse {
+export interface LinkupResearchResponse<TOutput = LinkupOutput> {
   status?: LinkupStatus;
-  output?: unknown;
+  output?: TOutput;
   [key: string]: unknown;
 }
 
@@ -43,14 +56,15 @@ export interface RetryOptions {
   retryOnStatus?: number[];
 }
 
-export interface LinkupPollOptions {
+export interface LinkupPollOptions<TOutput = LinkupOutput> {
   pollIntervalMs?: number;
   timeoutMs?: number;
   retry?: RetryOptions;
+  signal?: AbortSignal;
   onStatus?: (info: {
     attempt: number;
     status: LinkupStatus;
-    response: LinkupResearchResponse;
+    response: LinkupResearchResponse<TOutput>;
     elapsedMs: number;
   }) => void;
 }
@@ -74,15 +88,32 @@ type ResearchParamsBase = {
   [key: string]: unknown;
 };
 
-export type ResearchParams =
-  | (ResearchParamsBase & {
-      outputType: "sourcedAnswer";
-      structuredOutputSchema?: never;
-    })
-  | (ResearchParamsBase & {
-      outputType: "structured";
-      structuredOutputSchema: JsonSchema;
-    });
+export type SourcedAnswerParams = ResearchParamsBase & {
+  outputType: "sourcedAnswer";
+  structuredOutputSchema?: never;
+};
+
+export type StructuredResearchParams<TStructured = unknown> = ResearchParamsBase & {
+  outputType: "structured";
+  structuredOutputSchema: JsonSchema;
+  __structuredOutput?: TStructured;
+};
+
+export type ResearchParams<TStructured = unknown> =
+  | SourcedAnswerParams
+  | StructuredResearchParams<TStructured>;
+
+type StructuredOutputTypeFromParams<TParams> =
+  TParams extends StructuredResearchParams<infer TStructured> ? TStructured : unknown;
+
+export type ResearchOutputFor<TParams extends ResearchParams<any>> = TParams extends {
+  outputType: "structured";
+}
+  ? StructuredOutput<StructuredOutputTypeFromParams<TParams>>
+  : SourcedAnswerOutput;
+
+export type LinkupResearchResponseFor<TParams extends ResearchParams<any>> =
+  LinkupResearchResponse<ResearchOutputFor<TParams>>;
 
 /**
  * Minimal client for Linkup /research endpoint.
@@ -105,7 +136,7 @@ export class LinkupClient {
    * Start a /research task. Returns { id }.
    * For outputType "structured", provide structuredOutputSchema.
    */
-  async search(params: ResearchParams) {
+  async search<TParams extends ResearchParams<any>>(params: TParams, options: { signal?: AbortSignal } = {}) {
     if (params.outputType === "structured") {
       const schema = params.structuredOutputSchema;
       if (!schema || typeof schema !== "object") {
@@ -118,6 +149,7 @@ export class LinkupClient {
       method: "POST",
       headers: this.headers(),
       body: JSON.stringify(payload),
+      signal: options.signal,
     });
 
     if (!response.ok) {
@@ -137,12 +169,16 @@ export class LinkupClient {
    * Fetch status/result for a /research taskId.
    * Retries are applied only for transient errors (network or retryable status codes).
    */
-  async check(taskId: string, options: { retry?: RetryOptions } = {}) {
+  async check<TOutput = LinkupOutput>(
+    taskId: string,
+    options: { retry?: RetryOptions; signal?: AbortSignal } = {},
+  ) {
     const retry = options.retry ?? this.retry;
     const response = await fetchWithRetry(
       `${this.baseUrl}/research/${taskId}`,
       {
         headers: this.headers(false),
+        signal: options.signal,
       },
       retry,
     );
@@ -153,21 +189,24 @@ export class LinkupClient {
       );
     }
 
-    return (await response.json()) as LinkupResearchResponse;
+    return (await response.json()) as LinkupResearchResponse<TOutput>;
   }
 
   /**
    * Poll until completion. Emits optional onStatus callbacks.
    */
-  async poll(taskId: string, options: LinkupPollOptions = {}) {
+  async poll<TOutput = LinkupOutput>(taskId: string, options: LinkupPollOptions<TOutput> = {}) {
     const pollIntervalMs = options.pollIntervalMs ?? 2000;
     const timeoutMs = options.timeoutMs ?? 5 * 60 * 1000;
     const start = Date.now();
     let attempt = 0;
 
     while (true) {
+      if (options.signal?.aborted) {
+        throw createAbortError();
+      }
       attempt += 1;
-      const response = await this.check(taskId, { retry: options.retry });
+      const response = await this.check<TOutput>(taskId, { retry: options.retry, signal: options.signal });
       const status = response.status ?? "unknown";
       options.onStatus?.({
         attempt,
@@ -184,16 +223,19 @@ export class LinkupClient {
         throw new Error(`Timed out after ${timeoutMs}ms waiting for Linkup research result.`);
       }
 
-      await sleep(pollIntervalMs);
+      await sleep(pollIntervalMs, options.signal);
     }
   }
 
   /**
    * Convenience: start + poll.
    */
-  async searchAndWait(params: ResearchParams, options: LinkupPollOptions = {}) {
+  async searchAndWait<TParams extends ResearchParams<any>>(
+    params: TParams,
+    options: LinkupPollOptions<ResearchOutputFor<TParams>> = {},
+  ): Promise<{ taskId: string; result: LinkupResearchResponseFor<TParams> }> {
     const start = await this.search(params);
-    const result = await this.poll(start.id, options);
+    const result = await this.poll<ResearchOutputFor<TParams>>(start.id, options);
     return { taskId: start.id, result };
   }
 
@@ -206,7 +248,9 @@ export class LinkupClient {
 }
 
 const buildResearchPayload = (params: ResearchParams) => {
-  const { query, outputType, ...rest } = params;
+  const { query, outputType, __structuredOutput, ...rest } = params as ResearchParams & {
+    __structuredOutput?: unknown;
+  };
   const payload: Record<string, unknown> = {
     q: query,
     outputType,
@@ -222,7 +266,28 @@ const buildResearchPayload = (params: ResearchParams) => {
   return payload;
 };
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(createAbortError());
+      return;
+    }
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      cleanup();
+      reject(createAbortError());
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    };
+    if (signal) {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+  });
 
 const readErrorBody = async (response: Response) => {
   try {
@@ -265,10 +330,22 @@ const fetchWithRetry = async (url: string, init: RequestInit, retry?: RetryOptio
 
       return response;
     } catch (error) {
+      if (isAbortError(error) || init.signal?.aborted) {
+        throw error;
+      }
       if (attempt >= maxAttempts) {
         throw error;
       }
       await sleep(computeDelay(attempt, baseDelayMs, maxDelayMs, jitter));
     }
   }
+};
+
+const isAbortError = (error: unknown) =>
+  error instanceof Error && (error.name === "AbortError" || error.message.toLowerCase().includes("aborted"));
+
+const createAbortError = () => {
+  const err = new Error("Aborted");
+  (err as Error & { name: string }).name = "AbortError";
+  return err;
 };

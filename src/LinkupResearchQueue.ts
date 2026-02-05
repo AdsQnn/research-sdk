@@ -263,6 +263,24 @@ export class LinkupResearchQueue {
     return this.state.getTaskId(requestId);
   }
 
+  /**
+   * Cancel a queued or active request by requestId (aborts local polling).
+   */
+  cancel(requestId: number) {
+    return this.engine.cancel(requestId);
+  }
+
+  /**
+   * Cancel by Linkup taskId (if tracked).
+   */
+  cancelByTaskId(taskId: string) {
+    const requestId = this.snapshots.getRequestId(taskId) ?? this.state.findRequestIdByTaskId(taskId);
+    if (requestId === undefined) {
+      return false;
+    }
+    return this.engine.cancel(requestId);
+  }
+
   stop() {
     this.engine.stop();
   }

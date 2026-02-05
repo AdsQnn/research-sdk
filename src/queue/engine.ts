@@ -26,6 +26,8 @@ export class QueueEngine {
   private readonly emitEvent: Emit;
   private readonly controller: AsyncGenerator<undefined, void, Command | undefined>;
   private readonly commandQueue: Command[] = [];
+  private readonly abortControllers = new Map<number, AbortController>();
+  private readonly cancelled = new Set<number>();
   private running = true;
   private stopping = false;
   private stopError: Error | null = null;
@@ -51,6 +53,11 @@ export class QueueEngine {
     if (this.isStopped) {
       throw new Error("Queue is stopped.");
     }
+    for (const task of tasks) {
+      if (!this.abortControllers.has(task.requestId)) {
+        this.abortControllers.set(task.requestId, new AbortController());
+      }
+    }
     this.enqueueCommand({ tasks });
   }
 
@@ -65,6 +72,8 @@ export class QueueEngine {
     for (const command of pendingCommands) {
       if ("tasks" in command) {
         for (const task of command.tasks) {
+          this.cancelled.add(task.requestId);
+          this.abort(task.requestId);
           this.rejectTask(task);
         }
       }
@@ -72,13 +81,59 @@ export class QueueEngine {
 
     const { queuedTasks, activeTasks } = this.state.drainAll();
     for (const task of queuedTasks) {
+      this.cancelled.add(task.requestId);
+      this.abort(task.requestId);
       this.rejectTask(task);
     }
     for (const active of activeTasks) {
+      this.cancelled.add(active.task.requestId);
+      this.abort(active.task.requestId);
       this.rejectTask(active.task, active.taskId);
     }
 
     this.enqueueCommand({ stop: true });
+  }
+
+  cancel(requestId: number) {
+    if (this.cancelled.has(requestId)) {
+      return false;
+    }
+    for (let i = 0; i < this.commandQueue.length; i += 1) {
+      const command = this.commandQueue[i];
+      if (!("tasks" in command)) {
+        continue;
+      }
+      const index = command.tasks.findIndex((task) => task.requestId === requestId);
+      if (index >= 0) {
+        const [task] = command.tasks.splice(index, 1);
+        if (command.tasks.length === 0) {
+          this.commandQueue.splice(i, 1);
+        }
+        this.cancelled.add(requestId);
+        this.abort(requestId);
+        this.rejectTask(task);
+        return true;
+      }
+    }
+
+    const queuedTask = this.state.removeQueued(requestId);
+    if (queuedTask) {
+      this.cancelled.add(requestId);
+      this.abort(requestId);
+      this.rejectTask(queuedTask);
+      return true;
+    }
+
+    const active = this.state.getActive(requestId);
+    if (active) {
+      this.cancelled.add(requestId);
+      this.abort(requestId);
+      this.rejectTask(active.task, active.taskId);
+      this.state.removeActive(requestId);
+      return true;
+    }
+
+    return false;
   }
 
   private emit(event: QueueEvent) {
@@ -171,9 +226,10 @@ export class QueueEngine {
       void this.drainQueue();
       return;
     }
+    const controller = this.getController(task.requestId);
     let taskId: string | undefined;
     try {
-      const start = await this.client.search(task.params);
+      const start = await this.client.search(task.params, { signal: controller.signal });
       taskId = start.id;
 
       if (this.stopping) {
@@ -194,6 +250,9 @@ export class QueueEngine {
 
       void this.pollTask(task, taskId);
     } catch (error) {
+      if (this.isCancelled(task.requestId)) {
+        return;
+      }
       const err = error instanceof Error ? error : new Error(String(error));
       this.emit({ type: "error", requestId: task.requestId, taskId, error: err });
       task.rejectId(err);
@@ -206,12 +265,17 @@ export class QueueEngine {
 
   private async pollTask(task: QueueTask, taskId: string) {
     try {
+      if (this.isCancelled(task.requestId)) {
+        return;
+      }
+      const controller = this.getController(task.requestId);
       const result = await this.client.poll(taskId, {
         pollIntervalMs: this.options.pollIntervalMs,
         timeoutMs: this.options.timeoutMs,
         retry: this.options.retry,
+        signal: controller.signal,
         onStatus: (info) => {
-          if (this.stopping) {
+          if (this.stopping || this.isCancelled(task.requestId)) {
             return;
           }
           this.emit({
@@ -231,7 +295,7 @@ export class QueueEngine {
       this.emit({ type: "completed", requestId: task.requestId, taskId, result });
       task.resolveDone(result);
     } catch (error) {
-      if (this.stopping) {
+      if (this.stopping || this.isCancelled(task.requestId)) {
         return;
       }
       const err = error instanceof Error ? error : new Error(String(error));
@@ -240,12 +304,35 @@ export class QueueEngine {
     } finally {
       this.cleanup(task.requestId);
       this.runningCount -= 1;
+      this.abortControllers.delete(task.requestId);
+      this.cancelled.delete(task.requestId);
       void this.drainQueue();
     }
   }
 
   private cleanup(requestId: number) {
     this.state.removeActive(requestId);
+  }
+
+  private getController(requestId: number) {
+    let controller = this.abortControllers.get(requestId);
+    if (!controller) {
+      controller = new AbortController();
+      this.abortControllers.set(requestId, controller);
+    }
+    return controller;
+  }
+
+  private abort(requestId: number) {
+    const controller = this.abortControllers.get(requestId);
+    if (controller && !controller.signal.aborted) {
+      controller.abort();
+    }
+    this.abortControllers.delete(requestId);
+  }
+
+  private isCancelled(requestId: number) {
+    return this.cancelled.has(requestId);
   }
 
   private rejectTask(task: QueueTask, taskId?: string) {

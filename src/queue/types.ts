@@ -1,6 +1,12 @@
-import type { LinkupPollOptions, LinkupResearchResponse, LinkupStatus, ResearchParams } from "../LinkupClient";
+import type {
+  LinkupOutput,
+  LinkupPollOptions,
+  LinkupResearchResponse,
+  LinkupStatus,
+  ResearchParams,
+} from "../LinkupClient";
 
-export type QueueEvent =
+export type QueueEvent<TOutput = LinkupOutput> =
   | {
       type: "enqueued";
       requestId: number;
@@ -17,14 +23,14 @@ export type QueueEvent =
       requestId: number;
       taskId: string;
       status: LinkupStatus;
-      response: LinkupResearchResponse;
+      response: LinkupResearchResponse<TOutput>;
       elapsedMs: number;
     }
   | {
       type: "completed";
       requestId: number;
       taskId: string;
-      result: LinkupResearchResponse;
+      result: LinkupResearchResponse<TOutput>;
     }
   | {
       type: "error";
@@ -33,24 +39,24 @@ export type QueueEvent =
       error: Error;
     };
 
-export interface QueueHandle {
+export interface QueueHandle<TOutput = LinkupOutput> {
   requestId: number;
   id: Promise<string>;
-  done: Promise<LinkupResearchResponse>;
+  done: Promise<LinkupResearchResponse<TOutput>>;
 }
 
-export interface QueueOptions extends LinkupPollOptions {
+export interface QueueOptions<TOutput = LinkupOutput> extends LinkupPollOptions<TOutput> {
   concurrency?: number;
   snapshotTtlMs?: number | null;
   snapshotMaxEntries?: number | null;
   checkConcurrency?: number;
 }
 
-export type CheckAllEntry = {
+export type CheckAllEntry<TOutput = LinkupOutput> = {
   requestId: number;
   taskId?: string;
   status?: LinkupStatus;
-  response?: LinkupResearchResponse;
+  response?: LinkupResearchResponse<TOutput>;
   error?: Error;
   notTracked?: boolean;
   phase?: "enqueued" | "started" | "status" | "completed" | "error";

@@ -200,6 +200,29 @@ const queue = new LinkupResearchQueue(client, {
 - `check(requestId)` — live GET for one task
 - `checkAll()` — live GET for all active tasks
 - `stop()` — stops the queue and rejects pending handles with `Error("Queue stopped")`
+- `cancel(requestId)` — aborts local polling and rejects that handle
+- `cancelByTaskId(taskId)` — same but by Linkup taskId
+
+## AbortSignal support
+
+`LinkupClient.search`, `check`, and `poll` accept `AbortSignal`:
+
+```ts
+const controller = new AbortController();
+const { id } = await client.search(
+  { query: "Example", outputType: "sourcedAnswer" },
+  { signal: controller.signal },
+);
+
+// later:
+controller.abort();
+```
+
+Queue cancellation uses AbortSignal internally to stop local polling.
+
+## Compatibility note
+
+`Promise.withResolvers` is not used (Node 18 compatible).
 
 ## Folder structure
 

@@ -1,4 +1,4 @@
-import type { LinkupResearchResponse, ResearchParams } from "../LinkupClient";
+import type { LinkupOutput, LinkupResearchResponse, ResearchParams } from "../LinkupClient";
 import type { ActiveEntry, QueuedEntry } from "./types";
 
 export type QueueTask = {
@@ -6,7 +6,7 @@ export type QueueTask = {
   params: ResearchParams;
   resolveId: (id: string) => void;
   rejectId: (error: Error) => void;
-  resolveDone: (result: LinkupResearchResponse) => void;
+  resolveDone: (result: LinkupResearchResponse<LinkupOutput>) => void;
   rejectDone: (error: Error) => void;
 };
 
@@ -74,6 +74,28 @@ export class QueueState {
       entries.push({ requestId, params: task.params });
     }
     return entries;
+  }
+
+  removeQueued(requestId: number) {
+    const task = this.queued.get(requestId);
+    if (!task) {
+      return undefined;
+    }
+    this.queued.delete(requestId);
+    const index = this.tasks.findIndex((entry) => entry.requestId === requestId);
+    if (index >= 0) {
+      this.tasks.splice(index, 1);
+    }
+    return task;
+  }
+
+  findRequestIdByTaskId(taskId: string) {
+    for (const [requestId, activeTask] of this.active.entries()) {
+      if (activeTask.taskId === taskId) {
+        return requestId;
+      }
+    }
+    return undefined;
   }
 
   entriesActive() {
