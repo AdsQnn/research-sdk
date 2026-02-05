@@ -48,6 +48,7 @@ The live API currently validates `structuredOutputSchema` for `structured` outpu
 - `fromDate` (Date | ISO string)
 - `toDate` (Date | ISO string)
 - `maxResults` (number)
+- `renderJs` (boolean)
 
 Additional fields are passed through as-is.
 
