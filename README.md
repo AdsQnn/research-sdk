@@ -1,4 +1,4 @@
-# Linkup /research SDK (v2)
+# Linkup /research SDK
 
 Minimal TypeScript client + queue wrapper for the Linkup `/research` endpoint.
 Designed to be simple to read and easy to extend.
@@ -50,6 +50,83 @@ The live API currently validates `structuredOutputSchema` for `structured` outpu
 - `maxResults` (number)
 
 Additional fields are passed through as-is.
+
+## Examples
+
+### 1) Start → check → poll (client)
+
+```ts
+import { LinkupClient } from "./index";
+
+const API_KEY = "API-KEY";
+const client = new LinkupClient({ apiKey: API_KEY });
+
+const { id } = await client.search({
+  query: "Who are Linkup, the French AI startup?",
+  outputType: "sourcedAnswer",
+  includeInlineCitations: false,
+});
+
+const first = await client.check(id);
+console.log(first.status);
+
+const final = await client.poll(id, {
+  pollIntervalMs: 2000,
+  onStatus: ({ status }) => console.log(status),
+});
+
+console.dir(final, { depth: null });
+```
+
+### 2) Queue batch + add (list of requests)
+
+```ts
+import { LinkupClient, LinkupResearchQueue, type ResearchParams } from "./index";
+
+const API_KEY = "API-KEY";
+const client = new LinkupClient({ apiKey: API_KEY });
+const queue = new LinkupResearchQueue(client, { concurrency: 2, pollIntervalMs: 2000 });
+
+const batch: ResearchParams[] = [
+  { query: "Who are Linkup, the French AI startup?", outputType: "sourcedAnswer" },
+  { query: "Give one sentence on Linkup's mission.", outputType: "sourcedAnswer" },
+];
+
+const batchHandles = queue.batch(batch);
+
+const singleHandle = queue.add({
+  query: "Return JSON with fields: company, founders.",
+  outputType: "structured",
+  structuredOutputSchema: {
+    type: "object",
+    properties: {
+      company: { type: "string" },
+      founders: { type: "array", items: { type: "string" } },
+    },
+    required: ["company", "founders"],
+    additionalProperties: false,
+  },
+});
+
+const results = await queue.waitAll([...batchHandles, singleHandle]);
+console.log(results.length);
+```
+
+### 3) Listen to queue events
+
+```ts
+const listener = queue.listen((evt) => {
+  if (evt.type === "started") {
+    console.log(evt.requestId, evt.taskId);
+  }
+  if (evt.type === "status") {
+    console.log(evt.requestId, evt.status);
+  }
+});
+
+// later:
+listener.unlisten();
+```
 
 ## Retry/backoff
 
@@ -134,8 +211,8 @@ linkup_research_sdk_v2/
 These are simple runnable scripts (no CLI args):
 
 ```bash
-bun linkup_research_sdk_v2/tests/client.test.ts
-bun linkup_research_sdk_v2/tests/queue.test.ts
+bun tests/client.test.ts
+bun tests/queue.test.ts
 ```
 
 They call the live API, so run sparingly.
