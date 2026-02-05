@@ -1,6 +1,29 @@
 export type LinkupOutputType = "sourcedAnswer" | "structured";
 
-export type LinkupStatus = "pending" | "processing" | "completed" | "error" | string;
+export type JsonSchemaTypeName = "null" | "boolean" | "object" | "array" | "number" | "integer" | "string";
+
+export type JsonSchemaPrimitive = string | number | boolean | null;
+
+export type JsonSchema = {
+  $id?: string;
+  $schema?: string;
+  title?: string;
+  description?: string;
+  type?: JsonSchemaTypeName | JsonSchemaTypeName[];
+  properties?: Record<string, JsonSchema>;
+  required?: string[];
+  items?: JsonSchema | JsonSchema[];
+  additionalProperties?: boolean | JsonSchema;
+  enum?: JsonSchemaPrimitive[];
+  const?: JsonSchemaPrimitive;
+  oneOf?: JsonSchema[];
+  anyOf?: JsonSchema[];
+  allOf?: JsonSchema[];
+  not?: JsonSchema;
+  [keyword: string]: unknown;
+};
+
+export type LinkupStatus = "pending" | "processing" | "completed" | "error" | "unknown";
 
 export interface LinkupStartResponse {
   id: string;
@@ -8,6 +31,7 @@ export interface LinkupStartResponse {
 
 export interface LinkupResearchResponse {
   status?: LinkupStatus;
+  output?: unknown;
   [key: string]: unknown;
 }
 
@@ -37,10 +61,8 @@ export interface LinkupClientConfig {
   retry?: RetryOptions;
 }
 
-export interface ResearchParams {
+type ResearchParamsBase = {
   query: string;
-  outputType: LinkupOutputType;
-  structuredOutputSchema?: unknown;
   includeImages?: boolean;
   includeInlineCitations?: boolean;
   includeSources?: boolean;
@@ -50,7 +72,17 @@ export interface ResearchParams {
   toDate?: Date | string;
   maxResults?: number;
   [key: string]: unknown;
-}
+};
+
+export type ResearchParams =
+  | (ResearchParamsBase & {
+      outputType: "sourcedAnswer";
+      structuredOutputSchema?: never;
+    })
+  | (ResearchParamsBase & {
+      outputType: "structured";
+      structuredOutputSchema: JsonSchema;
+    });
 
 /**
  * Minimal client for Linkup /research endpoint.

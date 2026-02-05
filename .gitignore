@@ -3,3 +3,5 @@ dist
 .DS_Store
 *.log
 api_linkup.json
+tests/mock_queue.local.ts
+tests/mock_prune.local.ts

@@ -1,6 +1,9 @@
 export { LinkupClient } from "./LinkupClient";
 export type {
   LinkupOutputType,
+  JsonSchema,
+  JsonSchemaPrimitive,
+  JsonSchemaTypeName,
   LinkupStatus,
   LinkupStartResponse,
   LinkupResearchResponse,
@@ -20,5 +23,4 @@ export type {
   QueueOptions,
   ListenerHandle,
 } from "./LinkupResearchQueue";
-
 

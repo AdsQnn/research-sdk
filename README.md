@@ -213,6 +213,7 @@ linkup_research_sdk_v2/
     index.ts
     queue/
       types.ts
+      engine.ts
       deferred.ts
       state.ts
       snapshots.ts
