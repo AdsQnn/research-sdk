@@ -79,4 +79,13 @@ export class QueueState {
   entriesActive() {
     return this.active.entries();
   }
+
+  drainAll() {
+    const queuedTasks = Array.from(this.queued.values());
+    const activeTasks = Array.from(this.active.values());
+    this.tasks.length = 0;
+    this.queued.clear();
+    this.active.clear();
+    return { queuedTasks, activeTasks };
+  }
 }

@@ -78,7 +78,7 @@ export class SnapshotStore {
       for (const [requestId, snapshot] of this.snapshots.entries()) {
         const updatedAt = snapshot.updatedAt ?? 0;
         if (updatedAt < cutoff) {
-          this.snapshots.delete(requestId);
+          this.removeSnapshot(requestId, snapshot);
         }
       }
     }
@@ -88,7 +88,18 @@ export class SnapshotStore {
       entries.sort((a, b) => (a[1].updatedAt ?? 0) - (b[1].updatedAt ?? 0));
       const toRemove = entries.length - this.maxEntries;
       for (let i = 0; i < toRemove; i += 1) {
-        this.snapshots.delete(entries[i][0]);
+        const [requestId, snapshot] = entries[i];
+        this.removeSnapshot(requestId, snapshot);
+      }
+    }
+  }
+
+  private removeSnapshot(requestId: number, snapshot: CheckAllEntry) {
+    this.snapshots.delete(requestId);
+    if (snapshot.taskId) {
+      const mapped = this.taskIdToRequestId.get(snapshot.taskId);
+      if (mapped === requestId) {
+        this.taskIdToRequestId.delete(snapshot.taskId);
       }
     }
   }

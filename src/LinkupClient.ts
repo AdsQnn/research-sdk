@@ -144,7 +144,7 @@ export class LinkupClient {
         elapsedMs: Date.now() - start,
       });
 
-      if (status !== "pending" && status !== "processing") {
+      if (status !== "pending" && status !== "processing" && status !== "unknown") {
         return response;
       }
 

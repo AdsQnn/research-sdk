@@ -25,6 +25,9 @@ type Command =
 
 type Listener = (event: QueueEvent) => void;
 
+const DEFAULT_SNAPSHOT_TTL_MS = 60 * 60 * 1000;
+const DEFAULT_SNAPSHOT_MAX_ENTRIES = 1000;
+
 /**
  * Queue wrapper for Linkup /research. Handles batching, polling, and status events.
  */
@@ -38,6 +41,8 @@ export class LinkupResearchQueue {
   private readonly controller: AsyncGenerator<undefined, void, Command | undefined>;
   private requestCounter = 0;
   private running = true;
+  private stopping = false;
+  private stopError: Error | null = null;
   private runningCount = 0;
   private drainingCommands = false;
   private drainingQueue = false;
@@ -46,9 +51,13 @@ export class LinkupResearchQueue {
   constructor(client: LinkupClient, options: QueueOptions = {}) {
     this.client = client;
     this.options = options;
+    const snapshotTtlMs =
+      options.snapshotTtlMs === null ? undefined : options.snapshotTtlMs ?? DEFAULT_SNAPSHOT_TTL_MS;
+    const snapshotMaxEntries =
+      options.snapshotMaxEntries === null ? undefined : options.snapshotMaxEntries ?? DEFAULT_SNAPSHOT_MAX_ENTRIES;
     this.snapshots = new SnapshotStore({
-      ttlMs: options.snapshotTtlMs,
-      maxEntries: options.snapshotMaxEntries,
+      ttlMs: snapshotTtlMs,
+      maxEntries: snapshotMaxEntries,
     });
     this.controller = this.controlLoop();
     void this.primeController();
@@ -58,6 +67,9 @@ export class LinkupResearchQueue {
    * Enqueue a single research request.
    */
   add(params: ResearchParams): QueueHandle {
+    if (this.stopping || !this.running) {
+      throw new Error("Queue is stopped.");
+    }
     const requestId = (this.requestCounter += 1);
     const idDeferred = createDeferred<string>();
     const doneDeferred = createDeferred<LinkupResearchResponse>();
@@ -79,6 +91,9 @@ export class LinkupResearchQueue {
    * Enqueue multiple requests at once.
    */
   batch(paramsList: ResearchParams[]): QueueHandle[] {
+    if (this.stopping || !this.running) {
+      throw new Error("Queue is stopped.");
+    }
     const handles: QueueHandle[] = [];
     const tasks: QueueTask[] = [];
 
@@ -174,7 +189,13 @@ export class LinkupResearchQueue {
    */
   async checkAll(requestIds?: number[]) {
     const targets = collectTargets(requestIds, this.state);
-    return await runCheckAll(targets, this.client, this.snapshots, this.options.retry);
+    return await runCheckAll(
+      targets,
+      this.client,
+      this.snapshots,
+      this.options.retry,
+      this.options.checkConcurrency,
+    );
   }
 
   /**
@@ -200,7 +221,13 @@ export class LinkupResearchQueue {
    */
   async checkAllByTaskId(taskIds?: string[]) {
     const targets = collectTargetsByTaskId(taskIds, this.state, this.snapshots);
-    return await runCheckAll(targets, this.client, this.snapshots, this.options.retry);
+    return await runCheckAll(
+      targets,
+      this.client,
+      this.snapshots,
+      this.options.retry,
+      this.options.checkConcurrency,
+    );
   }
 
   /**
@@ -248,7 +275,29 @@ export class LinkupResearchQueue {
   }
 
   stop() {
-    this.running = false;
+    if (this.stopping) {
+      return;
+    }
+    this.stopping = true;
+    this.stopError = new Error("Queue stopped");
+
+    const pendingCommands = this.commandQueue.splice(0, this.commandQueue.length);
+    for (const command of pendingCommands) {
+      if ("tasks" in command) {
+        for (const task of command.tasks) {
+          this.rejectTask(task);
+        }
+      }
+    }
+
+    const { queuedTasks, activeTasks } = this.state.drainAll();
+    for (const task of queuedTasks) {
+      this.rejectTask(task);
+    }
+    for (const active of activeTasks) {
+      this.rejectTask(active.task, active.taskId);
+    }
+
     this.enqueueCommand({ stop: true });
   }
 
@@ -324,7 +373,7 @@ export class LinkupResearchQueue {
 
     try {
       const concurrency = this.options.concurrency ?? 5;
-      while (this.running) {
+      while (this.running && !this.stopping) {
         const available = concurrency - this.runningCount;
         if (available <= 0) {
           return;
@@ -343,10 +392,23 @@ export class LinkupResearchQueue {
   }
 
   private async startTask(task: QueueTask) {
+    if (this.stopping) {
+      this.cleanup(task.requestId);
+      this.runningCount -= 1;
+      void this.drainQueue();
+      return;
+    }
     let taskId: string | undefined;
     try {
       const start = await this.client.search(task.params);
       taskId = start.id;
+
+      if (this.stopping) {
+        this.cleanup(task.requestId);
+        this.runningCount -= 1;
+        void this.drainQueue();
+        return;
+      }
 
       this.state.setTaskId(task.requestId, taskId);
       task.resolveId(taskId);
@@ -376,6 +438,9 @@ export class LinkupResearchQueue {
         timeoutMs: this.options.timeoutMs,
         retry: this.options.retry,
         onStatus: (info) => {
+          if (this.stopping) {
+            return;
+          }
           this.emit({
             type: "status",
             requestId: task.requestId,
@@ -387,9 +452,15 @@ export class LinkupResearchQueue {
         },
       });
 
+      if (this.stopping) {
+        return;
+      }
       this.emit({ type: "completed", requestId: task.requestId, taskId, result });
       task.resolveDone(result);
     } catch (error) {
+      if (this.stopping) {
+        return;
+      }
       const err = error instanceof Error ? error : new Error(String(error));
       this.emit({ type: "error", requestId: task.requestId, taskId, error: err });
       task.rejectDone(err);
@@ -402,6 +473,13 @@ export class LinkupResearchQueue {
 
   private cleanup(requestId: number) {
     this.state.removeActive(requestId);
+  }
+
+  private rejectTask(task: QueueTask, taskId?: string) {
+    const err = this.stopError ?? new Error("Queue stopped");
+    this.emit({ type: "error", requestId: task.requestId, taskId, error: err });
+    task.rejectId(err);
+    task.rejectDone(err);
   }
 }
 

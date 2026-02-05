@@ -7,7 +7,7 @@ Designed to be simple to read and easy to extend.
 
 - `LinkupClient` — direct `/research` calls (start, check, poll)
 - `LinkupResearchQueue` — batching, polling, snapshots, and event listening
-- Examples you can run directly (no CLI args required)
+- Live API tests you can run directly
 
 ## Requirements
 
@@ -134,7 +134,7 @@ You can enable retry for transient errors on `check/poll`:
 
 ```ts
 const client = new LinkupClient({
-  apiKey: apiConfig.api_key,
+  apiKey: API_KEY,
   retry: {
     maxAttempts: 3,
     baseDelayMs: 250,
@@ -160,12 +160,32 @@ const queue = new LinkupResearchQueue(client, {
 
 ## Snapshot retention
 
-Optional pruning for snapshots:
+By default the queue keeps snapshots for 1 hour and caps at 1000 entries.
+You can override or disable the limits:
 
 ```ts
 const queue = new LinkupResearchQueue(client, {
   snapshotTtlMs: 10 * 60 * 1000, // keep 10 minutes
   snapshotMaxEntries: 200,       // cap memory
+});
+```
+
+Disable pruning entirely:
+
+```ts
+const queue = new LinkupResearchQueue(client, {
+  snapshotTtlMs: null,
+  snapshotMaxEntries: null,
+});
+```
+
+## checkAll concurrency
+
+Limit parallel GETs for `checkAll`/`checkAllByTaskId`:
+
+```ts
+const queue = new LinkupResearchQueue(client, {
+  checkConcurrency: 4,
 });
 ```
 
@@ -179,6 +199,7 @@ const queue = new LinkupResearchQueue(client, {
 - `all()` — snapshot list (queued/active/completed/error)
 - `check(requestId)` — live GET for one task
 - `checkAll()` — live GET for all active tasks
+- `stop()` — stops the queue and rejects pending handles with `Error("Queue stopped")`
 
 ## Folder structure
 

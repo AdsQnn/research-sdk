@@ -41,8 +41,9 @@ export interface QueueHandle {
 
 export interface QueueOptions extends LinkupPollOptions {
   concurrency?: number;
-  snapshotTtlMs?: number;
-  snapshotMaxEntries?: number;
+  snapshotTtlMs?: number | null;
+  snapshotMaxEntries?: number | null;
+  checkConcurrency?: number;
 }
 
 export type CheckAllEntry = {

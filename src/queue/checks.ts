@@ -9,8 +9,9 @@ export const runCheckAll = async (
   client: LinkupClient,
   snapshots: SnapshotStore,
   retry?: RetryOptions,
+  checkConcurrency?: number,
 ) => {
-  const checks = targets.map(async (target) => {
+  const runCheck = async (target: CheckTarget) => {
     if (!target.taskId) {
       return { requestId: target.requestId, notTracked: true } as CheckAllEntry;
     }
@@ -38,7 +39,25 @@ export const runCheckAll = async (
       snapshots.update(entry);
       return entry;
     }
+  };
+
+  if (!checkConcurrency || checkConcurrency <= 0 || checkConcurrency >= targets.length) {
+    return await Promise.all(targets.map((target) => runCheck(target)));
+  }
+
+  const results: CheckAllEntry[] = new Array(targets.length);
+  let index = 0;
+  const workers = Array.from({ length: Math.min(checkConcurrency, targets.length) }, async () => {
+    while (true) {
+      const current = index;
+      index += 1;
+      if (current >= targets.length) {
+        return;
+      }
+      results[current] = await runCheck(targets[current]);
+    }
   });
 
-  return await Promise.all(checks);
+  await Promise.all(workers);
+  return results;
 };
