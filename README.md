@@ -13,7 +13,7 @@ Designed to be simple to read and easy to extend.
 
 - A Linkup API key
 
-Set it in the test files by replacing `API-KEY`.
+Set it in the test files by replacing `API_KEY`.
 
 ## Usage
 
@@ -58,7 +58,7 @@ Additional fields are passed through as-is.
 ```ts
 import { LinkupClient } from "./src/index";
 
-const API_KEY = "API-KEY";
+const API_KEY = "API_KEY";
 const client = new LinkupClient({ apiKey: API_KEY });
 
 const { id } = await client.search({
@@ -83,7 +83,7 @@ console.dir(final, { depth: null });
 ```ts
 import { LinkupClient, LinkupResearchQueue, type ResearchParams } from "./src/index";
 
-const API_KEY = "API-KEY";
+const API_KEY = "API_KEY";
 const client = new LinkupClient({ apiKey: API_KEY });
 const queue = new LinkupResearchQueue(client, { concurrency: 2, pollIntervalMs: 2000 });
 
