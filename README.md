@@ -221,10 +221,6 @@ controller.abort();
 
 Queue cancellation uses AbortSignal internally to stop local polling.
 
-## Compatibility note
-
-`Promise.withResolvers` is not used (Node 18 compatible).
-
 ## Folder structure
 
 ```
